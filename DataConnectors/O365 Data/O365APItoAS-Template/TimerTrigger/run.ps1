@@ -60,64 +60,6 @@ function Write-OMSLogfile {
         Write-Verbose -Message "Type: $type"
         write-Verbose -Message "LogData: $logdata"
 
-        #region Workspace ID and Key
-        # Workspace ID for the workspace
-        #$CustomerID = 'ENTER WORKSPACE ID HERE'
-
-        # Shared key needs to be set for environment
-        # Below uses an encrypted variable from Azure Automation
-        # Uncomment the next two lines if using Azure Automation Variable and comment the last
-        # $automationVarName = 'Enter Variable Name Here'
-        # $sharedKey = Get-AutomationVariable -name $automationVarName
-        # Key Vault is another secure option for storing the value
-        # Less secure option is to put the key in the code
-        #$SharedKey = 'ENTER WORKSPACE KEY HERE'
-
-        #endregion
-
-        # Supporting Functions
-        # Function to create the auth signature
-        function Build-signature ($CustomerID, $SharedKey, $Date, $ContentLength, $method, $ContentType, $resource) {
-            $xheaders = 'x-ms-date:' + $Date
-            $stringToHash = $method + "`n" + $contentLength + "`n" + $contentType + "`n" + $xHeaders + "`n" + $resource
-            $bytesToHash = [text.Encoding]::UTF8.GetBytes($stringToHash)
-            $keyBytes = [Convert]::FromBase64String($SharedKey)
-            $sha256 = New-Object System.Security.Cryptography.HMACSHA256
-            $sha256.key = $keyBytes
-            $calculateHash = $sha256.ComputeHash($bytesToHash)
-            $encodeHash = [convert]::ToBase64String($calculateHash)
-            $authorization = 'SharedKey {0}:{1}' -f $CustomerID,$encodeHash
-            return $authorization
-        }
-        # Function to create and post the request
-        Function Post-LogAnalyticsData ($CustomerID, $SharedKey, $Body, $Type) {
-            $method = "POST"
-            $ContentType = 'application/json'
-            $resource = '/api/logs'
-            $rfc1123date = ($dateTime).ToString('r')
-            $ContentLength = $Body.Length
-            $signature = Build-signature `
-                -customerId $CustomerID `
-                -sharedKey $SharedKey `
-                -date $rfc1123date `
-                -contentLength $ContentLength `
-                -method $method `
-                -contentType $ContentType `
-                -resource $resource
-            $uri = "https://" + $customerId + ".ods.opinsights.azure.com" + $resource + "?api-version=2016-04-01"
-            $headers = @{
-                "Authorization" = $signature;
-                "Log-Type" = $type;
-                "x-ms-date" = $rfc1123date
-                "time-generated-field" = $dateTime
-            }
-            $response = Invoke-WebRequest -Uri $uri -Method $method -ContentType $ContentType -Headers $headers -Body $body -UseBasicParsing
-            Write-Verbose -message ('Post Function Return Code ' + $response.statuscode)
-            return $response.statuscode
-        }
-
-        # Check if time is UTC, Convert to UTC if not.
-        # $dateTime = (Get-Date)
         if ($dateTime.kind.tostring() -ne 'Utc'){
             $dateTime = $dateTime.ToUniversalTime()
             Write-Verbose -Message $dateTime
@@ -143,8 +85,7 @@ function Write-OMSLogfile {
 
         Set-AzStorageBlobContent -Container $containerName -Name $dateTime.ToString("yyyyMMddHHmmss") + ".json" -Context $Context -Content $logMessage
 
-        Write-Verbose -Message "Post Statement Return Code $returnCode"
-        return $returnCode
+        Write-Verbose -Message "Write to Azure Storage"
     }
 
 function Get-AuthToken{
@@ -190,7 +131,7 @@ function Get-O365Data{
         do {
             #List Available Content
             $contentResult = Invoke-RestMethod -Method GET -Headers $headerParams -Uri $listAvailableContentUri
-            $contentResult.Count
+            Write-Verbose -Messaage "ContentResult: $contentResult.Count"
             #Loop for each Content
             foreach($obj in $contentResult){
                 #Retrieve Content
