@@ -125,13 +125,15 @@ function Get-O365Data{
     )
     #List Available Content
     $contentTypes = $env:contentTypes.split(",")
+    Write-Host "ContentTypes: $contentTypes"
     #Loop for each content Type like Audit.General
     foreach($contentType in $contentTypes){
+        Write-Host "Invoke REST API for $contentType"
         $listAvailableContentUri = "https://manage.office.com/api/v1.0/$tenantGUID/activity/feed/subscriptions/content?contentType=$contentType&PublisherIdentifier=$env:publisher&startTime=$startTime&endTime=$endTime"
         do {
             #List Available Content
             $contentResult = Invoke-RestMethod -Method GET -Headers $headerParams -Uri $listAvailableContentUri
-            Write-Verbose -Message "ContentResult: $contentResult.Count"
+            Write-Host "ContentResult: $contentResult"
             #Loop for each Content
             foreach($obj in $contentResult){
                 #Retrieve Content
@@ -160,7 +162,6 @@ function Get-O365Data{
                                 #$writeResult
                             }
                         }
-                        
                     }
                 }
             }
