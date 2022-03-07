@@ -131,7 +131,7 @@ function Get-O365Data{
         do {
             #List Available Content
             $contentResult = Invoke-RestMethod -Method GET -Headers $headerParams -Uri $listAvailableContentUri
-            Write-Verbose -Messaage "ContentResult: $contentResult.Count"
+            Write-Verbose -Message "ContentResult: $contentResult.Count"
             #Loop for each Content
             foreach($obj in $contentResult){
                 #Retrieve Content
