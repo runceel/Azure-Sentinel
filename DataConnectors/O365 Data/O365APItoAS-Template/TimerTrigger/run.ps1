@@ -1,92 +1,41 @@
 # Input bindings are passed in via param block.
 param($Timer)
 
-#Import-module .\TimerTrigger\modules\Write-OMSLogfile.ps1
-###################################################################################
-#  API Log to OMS Log Analytics Workspace
-###################################################################################
-#Credit: https://github.com/tsrob50/LogAnalyticsAPIFunction
-function Write-OMSLogfile {
-    <#
-    .SYNOPSIS
-    Inputs a hashtable, date and workspace type and writes it to a Log Analytics Workspace.
-    .DESCRIPTION
-    Given a  value pair hash table, this function will write the data to an OMS Log Analytics workspace.
-    Certain variables, such as Customer ID and Shared Key are specific to the OMS workspace data is being written to.
-    This function will not write to multiple OMS workspaces.  Build-signature and post-analytics function from Microsoft documentation
-    at https://docs.microsoft.com/en-us/azure/log-analytics/log-analytics-data-collector-api
-    .PARAMETER DateTime
-    date and time for the log.  DateTime value
-    .PARAMETER Type
-    Name of the logfile or Log Analytics "Type".  Log Analytics will append _CL at the end of custom logs  String Value
-    .PARAMETER LogData
-    A series of key, value pairs that will be written to the log.  Log file are unstructured but the key should be consistent
-    withing each source.
-    .INPUTS
-    The parameters of data and time, type and logdata.  Logdata is converted to JSON to submit to Log Analytics.
-    .OUTPUTS
-    The Function will return the HTTP status code from the Post method.  Status code 200 indicates the request was received.
-    .NOTES
-    Version:        2.0
-    Author:         Travis Roberts
-    Creation Date:  7/9/2018
-    Purpose/Change: Crating a stand alone function.
-    .EXAMPLE
-    This Example will log data to the "LoggingTest" Log Analytics table
-    $type = 'LoggingTest'
-    $dateTime = Get-Date
-    $data = @{
-        ErrorText   = 'This is a test message'
-        ErrorNumber = 1985
+function Write-Blob {
+    [cmdletbinding()]
+    Param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [datetime]$dateTime,
+        [Parameter(Mandatory = $true, Position = 1)]
+        [psobject]$logdata,
+        [Parameter(Mandatory = $true, Position = 2)]
+        [string]$contentType
+    )
+
+    if ($dateTime.kind.tostring() -ne 'Utc'){
+        $dateTime = $dateTime.ToUniversalTime()
     }
-    $returnCode = Write-OMSLogfile $dateTime $type $data -Verbose
-    write-output $returnCode
-    #>
-        [cmdletbinding()]
-        Param(
-            [Parameter(Mandatory = $true, Position = 0)]
-            [datetime]$dateTime,
-            [parameter(Mandatory = $true, Position = 1)]
-            [string]$type,
-            [Parameter(Mandatory = $true, Position = 2)]
-            [psobject]$logdata,
-            [Parameter(Mandatory = $true, Position = 3)]
-            [string]$CustomerID,
-            [Parameter(Mandatory = $true, Position = 4)]
-            [string]$SharedKey
-        )
-        Write-Verbose -Message "DateTime: $dateTime"
-        Write-Verbose -Message ('DateTimeKind:' + $dateTime.kind)
-        Write-Verbose -Message "Type: $type"
-        write-Verbose -Message "LogData: $logdata"
+    # Add DateTime to hashtable
+    #$logdata.add("DateTime", $dateTime)
+    $logdata | Add-Member -MemberType NoteProperty -Name "DateTime" -Value $dateTime
 
-        if ($dateTime.kind.tostring() -ne 'Utc'){
-            $dateTime = $dateTime.ToUniversalTime()
-            Write-Verbose -Message $dateTime
-        }
+    #Build the JSON file
+    $logMessage = ConvertTo-Json $logdata -Depth 20
+    Write-Verbose -Message $logMessage
 
-        # Add DateTime to hashtable
-        #$logdata.add("DateTime", $dateTime)
-        $logdata | Add-Member -MemberType NoteProperty -Name "DateTime" -Value $dateTime
+    $fileName = $contentType + "-" + $dateTime.ToString("yyyyMMddHHmmss") + ".json"
+    $blobName = $dateTime.ToString("yyyy/MM/dd") + "/" + $fileName
+    $tempFilePath = "$env:TEMP\$fileName"
+    $logMessage | Out-File $tempFilePath
 
-        #Build the JSON file
-        $logMessage = ConvertTo-Json $logdata -Depth 20
-        Write-Verbose -Message $logMessage
-
-        #Submit the data
-        # $returnCode = Post-LogAnalyticsData -CustomerID $CustomerID -SharedKey $SharedKey -Body ([System.Text.Encoding]::UTF8.GetBytes($logMessage)) -Type $type
-        # 変更
-        $azstoragestring = $Env:WEBSITE_CONTENTAZUREFILECONNECTIONSTRING
-        $Context = New-AzStorageContext -ConnectionString $azstoragestring
-        $containerName = "mylogs"
-        if((Get-AzStorageContainer -Context $Context).Name -notcontains $containerName) {
-            New-AzStorageContainer -Name $containerName -Context $Context
-        }
-
-        Set-AzStorageBlobContent -Container $containerName -Name $dateTime.ToString("yyyyMMddHHmmss") + ".json" -Context $Context -Content $logMessage
-
-        Write-Verbose -Message "Write to Azure Storage"
+    $containerName = "o365logs"
+    if((Get-AzStorageContainer -Context $Context).Name -notcontains $containerName) {
+        New-AzStorageContainer -Name $containerName -Context $Context
     }
+
+    Set-AzStorageBlobContent -Container $containerName -Blob $blobName -Context $Context -File $tempFilePath -Force
+    Remove-Item -Path $tempFilePath -Force
+}
 
 function Get-AuthToken{
     [cmdletbinding()]
@@ -139,31 +88,7 @@ function Get-O365Data{
                 #Retrieve Content
                 $data = Invoke-RestMethod -Method GET -Headers $headerParams -Uri ($obj.contentUri)
                 $data.Count
-                #Loop through each Record in the Content
-                foreach($event in $data){
-                    #Filtering for Recrord types
-                    #Get all Record Types
-                    if($env:recordTypes -eq "0"){
-                        #We dont need Cloud App Security Alerts due to MCAS connector
-                        if(($event.Source) -ne "Cloud App Security"){
-                            #Write each event to Log A
-                            $writeResult = Write-OMSLogfile (Get-Date) $env:customLogName $event $env:workspaceId $env:workspaceKey
-                            #$writeResult
-                        }
-                    }
-                    else{
-                        #Get only certain record types
-                        $types = ($env:recordTypes).split(",")
-                        if(($event.RecordType) -in $types){
-                            #We dont need Cloud App Security Alerts due to MCAS connector
-                            if(($event.Source) -ne "Cloud App Security"){
-                                #write each event to Log A
-                                $writeResult = Write-OMSLogfile (Get-Date) $env:customLogName $event $env:workspaceId $env:workspaceKey
-                                #$writeResult
-                            }
-                        }
-                    }
-                }
+                Write-Blob (Get-Date) $data $contentType
             }
             
             #Handles Pagination
