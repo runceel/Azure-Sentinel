@@ -23,7 +23,7 @@ function Write-Blob {
     $logMessage = ConvertTo-Json $logdata -Depth 20
     Write-Verbose -Message $logMessage
 
-    $fileName = $contentType + "-" + $dateTime.ToString("yyyyMMddHHmmss") + ".json"
+    $fileName = $contentType + "-" + $dateTime.ToString("yyyyMMddHHmmss") + "-" + (New-Guid) + ".json"
     $blobName = $dateTime.ToString("yyyy/MM/dd") + "/" + $fileName
     $tempFilePath = "$env:TEMP\$fileName"
     $logMessage | Out-File $tempFilePath
